@@ -25,7 +25,7 @@ dropout = slim.dropout
 def residual_block_2(inputs,
                      out_channels,
                      num_filters,
-                     resample=None,
+                     resample=False,
                      activation_fn=tf.nn.relu,
                      normalizer_fn=None,
                      normalizer_params=None,
@@ -34,13 +34,6 @@ def residual_block_2(inputs,
                      biases_initializer=tf.constant_initializer(0.2),
                      biases_regularizer=None,
                      scope=None):
-    """Residual block.
-
-    resample: None, 'down' or 'up'.
-    """
-    assert resample in [None, 'down', 'up'], \
-        "`resample` should be None, 'down' or 'up'!"
-
     params = dict(activation_fn=activation_fn,
                   normalizer_fn=normalizer_fn,
                   normalizer_params=normalizer_params,
@@ -50,12 +43,11 @@ def residual_block_2(inputs,
                   biases_regularizer=biases_regularizer)
 
     conv = functools.partial(slim.conv2d, **params)
-    deconv = functools.partial(slim.conv2d_transpose, **params)
 
     with tf.variable_scope(scope, 'residual_block_2', [inputs]):
         in_channels = inputs.get_shape().as_list()[-1]
 
-        if resample is None:
+        if not resample:
             if in_channels == out_channels:
                 shortcut = inputs
             else:
@@ -63,14 +55,9 @@ def residual_block_2(inputs,
             residual = conv(inputs, num_filters, 3, 1)
             residual = conv(residual, out_channels, 3, 1, activation_fn=None)
 
-        elif resample == 'down':
+        else:
             shortcut = conv(inputs, out_channels, 1, 2, activation_fn=None)
             residual = conv(inputs, num_filters, 3, 2)
-            residual = conv(residual, out_channels, 3, 1, activation_fn=None)
-
-        elif resample == 'up':
-            shortcut = deconv(inputs, out_channels, 1, 2, activation_fn=None)
-            residual = deconv(inputs, num_filters, 3, 2)
             residual = conv(residual, out_channels, 3, 1, activation_fn=None)
 
         return activation_fn(shortcut + residual)
@@ -79,7 +66,7 @@ def residual_block_2(inputs,
 def residual_block_3(inputs,
                      out_channels,
                      num_filters,
-                     resample=None,
+                     resample=False,
                      activation_fn=tf.nn.relu,
                      normalizer_fn=None,
                      normalizer_params=None,
@@ -88,13 +75,6 @@ def residual_block_3(inputs,
                      biases_initializer=tf.constant_initializer(0.2),
                      biases_regularizer=None,
                      scope=None):
-    """Residual block.
-
-    resample: None, 'down' or 'up'.
-    """
-    assert resample in [None, 'down', 'up'], \
-        "`resample` should be None, 'down' or 'up'!"
-
     params = dict(activation_fn=activation_fn,
                   normalizer_fn=normalizer_fn,
                   normalizer_params=normalizer_params,
@@ -104,12 +84,11 @@ def residual_block_3(inputs,
                   biases_regularizer=biases_regularizer)
 
     conv = functools.partial(slim.conv2d, **params)
-    deconv = functools.partial(slim.conv2d_transpose, **params)
 
     with tf.variable_scope(scope, 'residual_block_3', [inputs]):
         in_channels = inputs.get_shape().as_list()[-1]
 
-        if resample is None:
+        if not resample:
             if in_channels == out_channels:
                 shortcut = inputs
             else:
@@ -118,15 +97,9 @@ def residual_block_3(inputs,
             residual = conv(residual, num_filters, 3, 1)
             residual = conv(residual, out_channels, 1, 1, activation_fn=None)
 
-        elif resample == 'down':
+        else:
             shortcut = conv(inputs, out_channels, 1, 2, activation_fn=None)
             residual = conv(inputs, num_filters, 1, 2)
-            residual = conv(residual, num_filters, 3, 1)
-            residual = conv(residual, out_channels, 1, 1, activation_fn=None)
-
-        elif resample == 'up':
-            shortcut = deconv(inputs, out_channels, 1, 2, activation_fn=None)
-            residual = deconv(inputs, num_filters, 1, 2)
             residual = conv(residual, num_filters, 3, 1)
             residual = conv(residual, out_channels, 1, 1, activation_fn=None)
 
@@ -144,12 +117,10 @@ def resnet_basic(inputs,
                  reuse=False,
                  updates_collections=None,
                  scope=None):
-    assert (isinstance(dims_conv2_to_5, (list, tuple)) and
-            len(dims_conv2_to_5) == 4),\
-        '`dims_conv2_to_5` should be a list(tuple) of length 4.'
-    assert (isinstance(repeats_conv2_to_5, (list, tuple)) and
-            len(repeats_conv2_to_5) == 4),\
-        '`repeats_conv2_to_5` should be a list(tuple) of length 4.'
+    assert (isinstance(dims_conv2_to_5, (list, tuple)) and len(dims_conv2_to_5) == 4), \
+        '`dims_conv2_to_5` should be a list/tuple of length 4!'
+    assert (isinstance(repeats_conv2_to_5, (list, tuple)) and len(repeats_conv2_to_5) == 4), \
+        '`repeats_conv2_to_5` should be a list/tuple of length 4!'
     assert block_fn in [residual_block_2, residual_block_3], 'Block type error!'
 
     # deal with difference

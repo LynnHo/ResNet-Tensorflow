@@ -25,7 +25,7 @@ dropout = slim.dropout
 def residual_block(inputs,
                    out_channels,
                    num_filters,
-                   resample=None,
+                   resample=False,
                    activation_fn=tf.nn.relu,
                    normalizer_fn=None,
                    normalizer_params=None,
@@ -35,14 +35,6 @@ def residual_block(inputs,
                    biases_regularizer=None,
                    scope=None,
                    block_type='l2'):
-    """Residual block.
-
-    resample: None, 'down' or 'up'.
-    """
-    assert resample in [None, 'down', 'up'], \
-        "`resample` should be None, 'down' or 'up'!"
-    assert block_type in ['l2', 'l3'], "Available `block_type`: ['l2', 'l3']!"
-
     params = dict(activation_fn=activation_fn,
                   normalizer_fn=normalizer_fn,
                   normalizer_params=normalizer_params,
@@ -52,17 +44,13 @@ def residual_block(inputs,
                   biases_regularizer=biases_regularizer)
 
     conv = functools.partial(slim.conv2d, **params)
-    deconv = functools.partial(slim.conv2d_transpose, **params)
 
-    if resample is None:
+    if not resample:
         stride = 1
         conv_fn = conv
-    elif resample == 'down':
+    else:
         stride = 2
         conv_fn = conv
-    elif resample == 'up':
-        stride = 2
-        conv_fn = deconv
 
     def residual_fn(inputs):
         if block_type == 'l2':
@@ -76,7 +64,7 @@ def residual_block(inputs,
 
     with tf.variable_scope(scope, 'residual_block_%s' % block_type, [inputs]):
         in_channels = inputs.get_shape().as_list()[-1]
-        if resample is None and in_channels == out_channels:
+        if resample is False and in_channels == out_channels:
             shortcut = inputs
         else:
             shortcut = conv_fn(inputs, out_channels, 1, stride, activation_fn=None)
@@ -98,12 +86,10 @@ def resnet_basic(inputs,
                  reuse=False,
                  updates_collections=None,
                  scope=None):
-    assert (isinstance(dims_conv2_to_5, (list, tuple)) and
-            len(dims_conv2_to_5) == 4),\
-        '`dims_conv2_to_5` should be a list(tuple) of length 4.'
-    assert (isinstance(repeats_conv2_to_5, (list, tuple)) and
-            len(repeats_conv2_to_5) == 4),\
-        '`repeats_conv2_to_5` should be a list(tuple) of length 4.'
+    assert (isinstance(dims_conv2_to_5, (list, tuple)) and len(dims_conv2_to_5) == 4), \
+        '`dims_conv2_to_5` should be a list/tuple of length 4!'
+    assert (isinstance(repeats_conv2_to_5, (list, tuple)) and len(repeats_conv2_to_5) == 4), \
+        '`repeats_conv2_to_5` should be a list/tuple of length 4!'
     assert block_fn in [residual_block_2, residual_block_3], 'Block type error!'
 
     # deal with difference
