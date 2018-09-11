@@ -90,7 +90,7 @@ def resnet_basic(inputs,
                    is_training=is_training,
                    updates_collections=updates_collections)
 
-    def _res_block(x, d, is_down_sample):
+    def _res_block(x, d, is_down_sample=False):
         if block_fn == residual_block_2:
             num_out_channels = d
         elif block_fn == residual_block_3:
