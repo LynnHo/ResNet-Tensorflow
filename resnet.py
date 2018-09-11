@@ -2,201 +2,154 @@ from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
-import functools
+from functools import partial
 
 import tensorflow as tf
-import tensorflow.contrib.slim as slim
+
+from tensorflow.contrib import slim
 
 
 # @TODO - Pre-activation residual_block
 # @TODO - ResNeXt
 
 
-default_image_size = 224
-
-conv2d = slim.conv2d
-fully_connected = slim.fully_connected
-max_pool2d = slim.max_pool2d
-avg_pool2d = slim.avg_pool2d
-batch_norm = slim.batch_norm
-dropout = slim.dropout
+DEFAULT_IMAGE_SIZE = 224
 
 
-def residual_block_2(inputs,
-                     out_channels,
-                     num_filters,
-                     resample=False,
-                     activation_fn=tf.nn.relu,
-                     normalizer_fn=None,
-                     normalizer_params=None,
-                     weights_initializer=slim.xavier_initializer(),
-                     weights_regularizer=None,
-                     biases_initializer=tf.constant_initializer(0.2),
-                     biases_regularizer=None,
-                     scope=None):
-    params = dict(activation_fn=activation_fn,
-                  normalizer_fn=normalizer_fn,
-                  normalizer_params=normalizer_params,
-                  weights_initializer=weights_initializer,
-                  weights_regularizer=weights_regularizer,
-                  biases_initializer=biases_initializer,
-                  biases_regularizer=biases_regularizer)
+def residual_block(inputs,
+                   num_out_channels,
+                   num_layers,
+                   num_filters,
+                   is_down_sample,
+                   activation_fn=tf.nn.relu,
+                   normalizer_fn=None,
+                   normalizer_params=None,
+                   weights_initializer=slim.xavier_initializer(),
+                   weights_regularizer=None,
+                   biases_initializer=tf.constant_initializer(0.2),
+                   biases_regularizer=None,
+                   reuse=None,
+                   trainable=True,
+                   scope=None):
+    assert num_layers in [2, 3], '`num_layers` should be 2 or 3!'
 
-    conv = functools.partial(slim.conv2d, **params)
+    conv = partial(slim.conv2d,
+                   activation_fn=activation_fn,
+                   normalizer_fn=normalizer_fn,
+                   normalizer_params=normalizer_params,
+                   weights_initializer=weights_initializer,
+                   weights_regularizer=weights_regularizer,
+                   biases_initializer=biases_initializer,
+                   biases_regularizer=biases_regularizer,
+                   trainable=trainable)
+    stride = 2 if is_down_sample else 1
 
-    with tf.variable_scope(scope, 'residual_block_2', [inputs]):
+    def _residual_fn(inputs):
+        if num_layers == 2:
+            residual = conv(inputs, num_filters, 3, stride)
+            residual = conv(residual, num_out_channels, 3, 1, activation_fn=None)
+        elif num_layers == 3:
+            residual = conv(inputs, num_filters, 1, stride)
+            residual = conv(residual, num_filters, 3, 1)
+            residual = conv(residual, num_out_channels, 1, 1, activation_fn=None)
+        return residual
+
+    with tf.variable_scope(scope, 'residual_block_%d' % num_layers, [inputs], reuse=reuse):
         in_channels = inputs.get_shape().as_list()[-1]
-
-        if not resample:
-            if in_channels == out_channels:
-                shortcut = inputs
-            else:
-                shortcut = conv(inputs, out_channels, 1, 1, activation_fn=None)
-            residual = conv(inputs, num_filters, 3, 1)
-            residual = conv(residual, out_channels, 3, 1, activation_fn=None)
-
+        if not is_down_sample and in_channels == num_out_channels:
+            shortcut = inputs
         else:
-            shortcut = conv(inputs, out_channels, 1, 2, activation_fn=None)
-            residual = conv(inputs, num_filters, 3, 2)
-            residual = conv(residual, out_channels, 3, 1, activation_fn=None)
-
+            shortcut = conv(inputs, num_out_channels, 1, stride, activation_fn=None)
+        residual = _residual_fn(inputs)
         return activation_fn(shortcut + residual)
 
-
-def residual_block_3(inputs,
-                     out_channels,
-                     num_filters,
-                     resample=False,
-                     activation_fn=tf.nn.relu,
-                     normalizer_fn=None,
-                     normalizer_params=None,
-                     weights_initializer=slim.xavier_initializer(),
-                     weights_regularizer=None,
-                     biases_initializer=tf.constant_initializer(0.2),
-                     biases_regularizer=None,
-                     scope=None):
-    params = dict(activation_fn=activation_fn,
-                  normalizer_fn=normalizer_fn,
-                  normalizer_params=normalizer_params,
-                  weights_initializer=weights_initializer,
-                  weights_regularizer=weights_regularizer,
-                  biases_initializer=biases_initializer,
-                  biases_regularizer=biases_regularizer)
-
-    conv = functools.partial(slim.conv2d, **params)
-
-    with tf.variable_scope(scope, 'residual_block_3', [inputs]):
-        in_channels = inputs.get_shape().as_list()[-1]
-
-        if not resample:
-            if in_channels == out_channels:
-                shortcut = inputs
-            else:
-                shortcut = conv(inputs, out_channels, 1, 1, activation_fn=None)
-            residual = conv(inputs, num_filters, 1, 1)
-            residual = conv(residual, num_filters, 3, 1)
-            residual = conv(residual, out_channels, 1, 1, activation_fn=None)
-
-        else:
-            shortcut = conv(inputs, out_channels, 1, 2, activation_fn=None)
-            residual = conv(inputs, num_filters, 1, 2)
-            residual = conv(residual, num_filters, 3, 1)
-            residual = conv(residual, out_channels, 1, 1, activation_fn=None)
-
-        return activation_fn(shortcut + residual)
+residual_block_2 = partial(residual_block, num_layers=2)
+residual_block_3 = partial(residual_block, num_layers=3)
 
 
 def resnet_basic(inputs,
-                 num_outputs=1000,
+                 dim_outputs=1000,
                  dim_conv1=64,
                  dims_conv2_to_5=[64, 128, 256, 512],
                  repeats_conv2_to_5=[2, 2, 2, 2],
                  block_fn=residual_block_2,  # resnet_18
                  weights_regularizer=None,
                  is_training=True,
-                 reuse=False,
+                 reuse=None,
                  updates_collections=None,
                  scope=None):
-    assert (isinstance(dims_conv2_to_5, (list, tuple)) and len(dims_conv2_to_5) == 4), \
+    assert isinstance(dims_conv2_to_5, (list, tuple)) and len(dims_conv2_to_5) == 4, \
         '`dims_conv2_to_5` should be a list/tuple of length 4!'
-    assert (isinstance(repeats_conv2_to_5, (list, tuple)) and len(repeats_conv2_to_5) == 4), \
+    assert isinstance(repeats_conv2_to_5, (list, tuple)) and len(repeats_conv2_to_5) == 4, \
         '`repeats_conv2_to_5` should be a list/tuple of length 4!'
-    assert block_fn in [residual_block_2, residual_block_3], 'Block type error!'
+    assert block_fn in [residual_block_2, residual_block_3], 'Unavailable `block_fn`!'
 
-    # deal with difference
-    norm = functools.partial(batch_norm,
-                             scale=True,
-                             epsilon=1e-5,
-                             is_training=is_training,
-                             updates_collections=updates_collections)
-    res_block_ = functools.partial(block_fn,
-                                   normalizer_fn=norm,
-                                   weights_regularizer=weights_regularizer,
-                                   biases_initializer=None)
+    norm = partial(slim.batch_norm,
+                   scale=True,
+                   epsilon=1e-5,
+                   is_training=is_training,
+                   updates_collections=updates_collections)
 
-    def res_block(x, d, resample=None):
+    def _res_block(x, d, is_down_sample):
         if block_fn == residual_block_2:
-            return res_block_(x, d, d, resample=resample)
+            num_out_channels = d
         elif block_fn == residual_block_3:
-            return res_block_(x, d * 4, d, resample=resample)
+            num_out_channels = 4 * d
+        return block_fn(x,
+                        num_out_channels=num_out_channels,
+                        num_filters=d,
+                        is_down_sample=is_down_sample,
+                        normalizer_fn=norm,
+                        weights_regularizer=weights_regularizer,
+                        biases_initializer=None)
 
-    # unified part
     with tf.variable_scope(scope, 'resnet_basic', [inputs], reuse=reuse):
         # conv1
-        net = conv2d(inputs, dim_conv1, 7, 2,
-                     biases_initializer=None,
-                     activation_fn=tf.nn.relu,
-                     normalizer_fn=norm)
+        net = slim.conv2d(inputs, dim_conv1, 7, 2,
+                          activation_fn=tf.nn.relu,
+                          normalizer_fn=norm,
+                          weights_regularizer=weights_regularizer,
+                          biases_initializer=None)
 
         # conv2_x ~ conv5_x
-        for dim, repeat, i in zip(dims_conv2_to_5,
-                                  repeats_conv2_to_5,
-                                  range(len(dims_conv2_to_5))):
+        for i, (dim, repeat) in enumerate(zip(dims_conv2_to_5, repeats_conv2_to_5)):
             if i == 0:
-                net = max_pool2d(net, 3, 2, padding='SAME')
-                for r in range(repeat):
-                    net = res_block(net, dim)
+                net = slim.max_pool2d(net, 3, 2, padding='SAME')
+                for _ in range(repeat):
+                    net = _res_block(net, dim)
             else:
-                net = res_block(net, dim, resample='down')
-                for r in range(repeat - 1):
-                    net = res_block(net, dim)
+                net = _res_block(net, dim, is_down_sample=True)
+                for _ in range(repeat - 1):
+                    net = _res_block(net, dim)
 
         # fc
-        net = avg_pool2d(net, 7, 1)
-        net = slim.flatten(net)
-        net = fully_connected(net, num_outputs,
-                              activation_fn=None,
-                              weights_regularizer=weights_regularizer)
+        net = tf.reduce_mean(net, axis=[2, 3])
+        net = slim.fully_connected(net, dim_outputs,
+                                   activation_fn=None,
+                                   weights_regularizer=weights_regularizer)
 
         return net
 
 
 def resnet(inputs,
-           num_outputs=1000,
+           resnet_type='resnet_18',
+           dim_outputs=1000,
            dim=64,
            weights_regularizer=None,
            is_training=True,
-           reuse=False,
+           reuse=None,
            updates_collections=None,
-           scope=None,
-           resnet_type='resnet_18'):
-    resnet_params = {'resnet_18': dict(repeats_conv2_to_5=[2, 2, 2, 2],
-                                       block_fn=residual_block_2),
-                     'resnet_34': dict(repeats_conv2_to_5=[3, 4, 6, 3],
-                                       block_fn=residual_block_2),
-                     'resnet_50': dict(repeats_conv2_to_5=[3, 4, 6, 3],
-                                       block_fn=residual_block_3),
-                     'resnet_101': dict(repeats_conv2_to_5=[3, 4, 23, 3],
-                                        block_fn=residual_block_3),
-                     'resnet_152': dict(repeats_conv2_to_5=[3, 8, 36, 3],
-                                        block_fn=residual_block_3)}
+           scope=None):
+    resnet_params = {'resnet_18': dict(repeats_conv2_to_5=[2, 2, 2, 2], block_fn=residual_block_2),
+                     'resnet_34': dict(repeats_conv2_to_5=[3, 4, 6, 3], block_fn=residual_block_2),
+                     'resnet_50': dict(repeats_conv2_to_5=[3, 4, 6, 3], block_fn=residual_block_3),
+                     'resnet_101': dict(repeats_conv2_to_5=[3, 4, 23, 3], block_fn=residual_block_3),
+                     'resnet_152': dict(repeats_conv2_to_5=[3, 8, 36, 3], block_fn=residual_block_3)}
 
-    assert resnet_type in resnet_params, 'Resnet type error!'
-
-    scope = resnet_type if scope is None else scope
+    assert resnet_type in resnet_params, 'Unavailable `resnet_type`!'
 
     return resnet_basic(inputs=inputs,
-                        num_outputs=num_outputs,
+                        dim_outputs=dim_outputs,
                         dim_conv1=dim,
                         dims_conv2_to_5=[dim, dim * 2, dim * 4, dim * 8],
                         weights_regularizer=weights_regularizer,
@@ -207,8 +160,8 @@ def resnet(inputs,
                         **resnet_params[resnet_type])
 
 # alis
-resnet_18 = functools.partial(resnet, resnet_type='resnet_18')
-resnet_34 = functools.partial(resnet, resnet_type='resnet_34')
-resnet_50 = functools.partial(resnet, resnet_type='resnet_50')
-resnet_101 = functools.partial(resnet, resnet_type='resnet_101')
-resnet_152 = functools.partial(resnet, resnet_type='resnet_152')
+resnet_18 = partial(resnet, resnet_type='resnet_18')
+resnet_34 = partial(resnet, resnet_type='resnet_34')
+resnet_50 = partial(resnet, resnet_type='resnet_50')
+resnet_101 = partial(resnet, resnet_type='resnet_101')
+resnet_152 = partial(resnet, resnet_type='resnet_152')
