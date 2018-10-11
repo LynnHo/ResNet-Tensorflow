@@ -9,10 +9,6 @@ import tensorflow as tf
 from tensorflow.contrib import slim
 
 
-# @TODO - Pre-activation residual_block
-# @TODO - ResNeXt
-
-
 DEFAULT_IMAGE_SIZE = 224
 
 
@@ -100,16 +96,14 @@ def resnet_basic(inputs,
                         num_filters=d,
                         is_down_sample=is_down_sample,
                         normalizer_fn=norm,
-                        weights_regularizer=weights_regularizer,
-                        biases_initializer=None)
+                        weights_regularizer=weights_regularizer)
 
     with tf.variable_scope(scope, 'resnet_basic', [inputs], reuse=reuse):
         # conv1
         net = slim.conv2d(inputs, dim_conv1, 7, 2,
                           activation_fn=tf.nn.relu,
                           normalizer_fn=norm,
-                          weights_regularizer=weights_regularizer,
-                          biases_initializer=None)
+                          weights_regularizer=weights_regularizer)
 
         # conv2_x ~ conv5_x
         for i, (dim, repeat) in enumerate(zip(dims_conv2_to_5, repeats_conv2_to_5)):
