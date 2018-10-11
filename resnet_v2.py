@@ -53,7 +53,7 @@ def residual_block(inputs,
 
     with tf.variable_scope(scope, 'residual_block_%d' % num_layers, [inputs], reuse=reuse):
         if is_pre_act:
-            pre_act = activation_fn(normalizer_fn(inputs, **normalizer_params))
+            pre_act = activation_fn(normalizer_fn(inputs, **({} if normalizer_params is None else normalizer_params)))
         else:
             pre_act = inputs
 
