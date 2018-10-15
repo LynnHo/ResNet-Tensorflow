@@ -117,7 +117,7 @@ def resnet_basic(inputs,
                     net = _res_block(net, dim)
 
         # fc
-        net = tf.reduce_mean(net, axis=[2, 3])
+        net = tf.reduce_mean(net, axis=[1, 2])
         net = slim.fully_connected(net, dim_outputs,
                                    activation_fn=None,
                                    weights_regularizer=weights_regularizer)
